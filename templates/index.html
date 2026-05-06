@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculadora de Tempo de Estudo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <h3>📚 Calculadora de Estudo</h3>
+
+    <div id="message"></div>
+
+    <div class="card">
+      <label for="subject">Assunto</label>
+      <input type="text" id="subject" placeholder="Ex: Algoritmos, Python, Matemática..." />
+
+      <div class="btn-row">
+        <button id="btn-start">▶ Iniciar</button>
+        <button id="btn-stop" disabled>■ Parar</button>
+      </div>
+
+      <div class="timer-block" id="timer-block">
+        <div class="timer-subject">Estudando: <span id="timer-subject-label"></span></div>
+        <div class="timer-display" id="timer-display">00:00:00</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="history-title">Sessões desta execução</div>
+      <ul id="history-list">
+        <li class="empty-msg">Nenhuma sessão registrada ainda.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    const btnStart = document.getElementById('btn-start');
+    const btnStop  = document.getElementById('btn-stop');
+    const subjectInput = document.getElementById('subject');
+    const timerBlock = document.getElementById('timer-block');
+    const timerDisplay = document.getElementById('timer-display');
+    const timerSubjectLabel = document.getElementById('timer-subject-label');
+    const messageEl = document.getElementById('message');
+    const historyList = document.getElementById('history-list');
+
+    let timerInterval = null;
+    let elapsedSeconds = 0;
+    let active = false;
+
+    function showMessage(text, isError = false) {
+      messageEl.textContent = text;
+      messageEl.className = isError ? 'error' : '';
+      if (!isError) setTimeout(() => { messageEl.textContent = ''; }, 4000);
+    }
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function formatSeconds(s) {
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      return `${pad(h)}:${pad(m)}:${pad(sec)}`;
+    }
+
+    function startLocalTimer(startElapsed) {
+      elapsedSeconds = startElapsed;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        elapsedSeconds++;
+        timerDisplay.textContent = formatSeconds(elapsedSeconds);
+      }, 1000);
+    }
+
+    function stopLocalTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    function setActiveUI(isActive, subject) {
+      active = isActive;
+      subjectInput.disabled = isActive;
+      btnStart.disabled = isActive;
+      btnStop.disabled = !isActive;
+
+      if (isActive) {
+        timerSubjectLabel.textContent = subject;
+        timerBlock.classList.add('visible');
+      } else {
+        timerBlock.classList.remove('visible');
+        timerDisplay.textContent = '00:00:00';
+      }
+    }
+
+    function addToHistory(data) {
+      const empties = historyList.querySelectorAll('.empty-msg');
+      empties.forEach(e => e.remove());
+
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="h-subject">${escapeHtml(data.subject)}</div>
+        <div class="h-meta">
+          ${data.start_time} → ${data.end_time} &nbsp;|&nbsp;
+          Duração: <span class="h-duration">${data.duration}</span>
+        </div>
+        <div class="h-meta" style="color:#6b7280">💾 ${escapeHtml(data.filename)}</div>
+      `;
+      historyList.insertBefore(li, historyList.firstChild);
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Restore state on page load
+    async function restoreStatus() {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        if (data.active) {
+          subjectInput.value = data.subject;
+          setActiveUI(true, data.subject);
+          startLocalTimer(data.elapsed_seconds);
+          showMessage(`Sessão em andamento: ${data.subject}`);
+        }
+      } catch (_) {}
+    }
+
+    btnStart.addEventListener('click', async () => {
+      const subject = subjectInput.value.trim();
+      if (!subject) {
+        showMessage('Informe o assunto antes de iniciar.', true);
+        subjectInput.focus();
+        return;
+      }
+      try {
+        const res = await fetch('/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showMessage(data.error, true); return; }
+        setActiveUI(true, subject);
+        startLocalTimer(0);
+        showMessage(`Sessão iniciada para "${subject}"`);
+      } catch (e) {
+        showMessage('Erro ao conectar com o servidor.', true);
+      }
+    });
+
+    btnStop.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/stop', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) { showMessage(data.error, true); return; }
+        stopLocalTimer();
+        setActiveUI(false, '');
+        subjectInput.value = '';
+        addToHistory(data);
+        showMessage(`✔ Sessão salva! Duração: ${data.duration} — ${data.filename}`);
+      } catch (e) {
+        showMessage('Erro ao conectar com o servidor.', true);
+      }
+    });
+
+    restoreStatus();
+  </script>
+</body>
+</html>
