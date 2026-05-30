@@ -1,0 +1,16 @@
+Gravado. Sequência para uso no dia a dia:
+
+# Entrar na pasta
+cd c:\dev_estudo\calculadora_tempo_estudo
+
+# Commitar e subir
+git add .
+git commit -m "sua mensagem"
+git push origin main
+
+Se precisar reconfigurar do zero:
+
+git init
+git branch -M main
+git remote add origin https://github.com/svcguilherme/calculadora_estudo.git
+git push -u origin main --force

@@ -1,11 +1,34 @@
-from flask import Flask, request, jsonify, render_template
-import csv
 import os
+import sys
+import csv
 import threading
 import webbrowser
 from datetime import datetime
 
-app = Flask(__name__)
+from flask import Flask, request, jsonify, render_template
+
+
+def get_base_dir() -> str:
+    # When running as a packaged executable, use the executable directory.
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_DIR = get_base_dir()
+SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+
+def ensure_runtime_directories() -> None:
+    for path in (SESSIONS_DIR, TEMPLATES_DIR, STATIC_DIR):
+        os.makedirs(path, exist_ok=True)
+
+
+ensure_runtime_directories()
+
+app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
 
 current_session = None
 
@@ -26,9 +49,18 @@ def index():
     return render_template("index.html")
 
 
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.route("/start", methods=["POST"])
 def start():
     global current_session
+    ensure_runtime_directories()
     data = request.get_json()
     subject = (data or {}).get("subject", "").strip()
 
@@ -68,8 +100,8 @@ def stop():
         f"estudo_{start_time.strftime('%Y%m%d_%H%M%S')}_{safe_filename(subject)}.csv"
     )
 
-    os.makedirs("sessions", exist_ok=True)
-    filepath = os.path.join("sessions", filename)
+    ensure_runtime_directories()
+    filepath = os.path.join(SESSIONS_DIR, filename)
 
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, delimiter=";")
@@ -110,4 +142,4 @@ def status():
 if __name__ == "__main__":
     print("Calculadora de Tempo de Estudo iniciada em http://localhost:5000")
     threading.Timer(1.0, lambda: webbrowser.open("http://localhost:5000")).start()
-    app.run(debug=False, port=5000)
+    app.run(debug=True, use_reloader=True, port=5000)
